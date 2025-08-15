@@ -16,8 +16,8 @@ use qualia_hello_world::ExpanderSpi;
 use qualia_hello_world::LcdFbs;
 use qualia_hello_world::{display_task, init_display, render_task};
 
-static W: u16 = 480;
-static H: u16 = 480;
+static W: u16 = 720;
+static H: u16 = 720;
 
 fn main() {
     esp_idf_svc::sys::link_patches();
@@ -51,38 +51,40 @@ fn main() {
     let tft_cs = pca_pins.io1.into_output().unwrap();
     let mut tft_reset = pca_pins.io2.into_output().unwrap();
     let _tp_irq = pca_pins.io3.into_output().unwrap();
-    let _backlight = pca_pins.io4.into_output().unwrap();
+    let mut backlight = pca_pins.io4.into_output().unwrap();
     let btn_up = pca_pins.io5.into_input().unwrap();
     let btn_down = pca_pins.io6.into_input().unwrap();
     let tft_mosi = pca_pins.io7.into_output().unwrap();
     log::info!("pins inited");
 
-    tft_reset.set_high().ok();
-    FreeRtos::delay_ms(10);
-    tft_reset.set_low().ok();
-    FreeRtos::delay_ms(10); // hold reset low long enough (datasheet: ~10–50 ms)
-    tft_reset.set_high().ok();
-    FreeRtos::delay_ms(10);
+    backlight.set_high().ok();
 
-    let mut fakespi = ExpanderSpi::new(tft_sck, tft_cs, tft_mosi, 1).unwrap();
-    init_display(&mut fakespi).unwrap();
+    tft_reset.set_high().ok();
+    FreeRtos::delay_ms(50);
+    tft_reset.set_low().ok();
+    FreeRtos::delay_ms(50); // hold reset low long enough (datasheet: ~10–50 ms)
+    tft_reset.set_high().ok();
+    FreeRtos::delay_ms(50);
+
+    //let mut fakespi = ExpanderSpi::new(tft_sck, tft_cs, tft_mosi, 1).unwrap();
+    //init_display(&mut fakespi).unwrap();
 
     let mut panel_handle: esp_lcd_panel_handle_t = ptr::null_mut();
 
     unsafe {
         let mut timings = esp_lcd_rgb_timing_t {
-            pclk_hz: 8_000_000,
+            pclk_hz: 20_000_000,
             h_res: W.into(),
             v_res: H.into(),
-            hsync_front_porch: 40,
-            hsync_pulse_width: 20,
-            hsync_back_porch: 40,
-            vsync_front_porch: 40,
-            vsync_pulse_width: 10,
-            vsync_back_porch: 40,
+            hsync_front_porch: 46,
+            hsync_pulse_width: 2,
+            hsync_back_porch: 44,
+            vsync_front_porch: 16,
+            vsync_pulse_width: 2,
+            vsync_back_porch: 18,
             ..Default::default()
         };
-        timings.flags.set_pclk_active_neg(1);
+        //timings.flags.set_pclk_active_neg(1);
 
         let mut config = esp_lcd_rgb_panel_config_t {
             clk_src: soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT,
@@ -98,10 +100,9 @@ fn main() {
             de_gpio_num: 2,
             pclk_gpio_num: 1,
             disp_gpio_num: -1,
-            data_gpio_nums: [11, 10, 9, 46, 3, 48, 47, 21, 14, 13, 12, 40, 39, 38, 0, 45],
+            data_gpio_nums: [40, 39, 38, 0, 45, 48, 47, 21, 14, 13, 12, 11, 10, 9, 46, 3], //BGR for 720x720 display
             ..Default::default()
         };
-
         config.flags.set_fb_in_psram(1);
         config.flags.set_double_fb(1);
 
@@ -116,14 +117,16 @@ fn main() {
         esp_lcd_panel_init(panel_handle);
 
         esp_lcd_panel_disp_on_off(panel_handle, true);
+        esp_lcd_rgb_panel_restart(panel_handle);
     }
     log::info!("Display inited");
 
     let mut fb = unsafe { LcdFbs::new(panel_handle, W.into(), H.into()) };
 
     unsafe {
-        let fbs: &'static mut LcdFbs<'static> =
-            core::mem::transmute::<_, _>(Box::leak(Box::new(LcdFbs::new(panel_handle, 480, 480))));
+        let fbs: &'static mut LcdFbs<'static> = core::mem::transmute::<_, _>(Box::leak(Box::new(
+            LcdFbs::new(panel_handle, W.into(), H.into()),
+        )));
 
         // display on core 0
         xTaskCreatePinnedToCore(
@@ -137,7 +140,7 @@ fn main() {
         );
 
         // renderer on core 1
-        xTaskCreatePinnedToCore(
+        /*xTaskCreatePinnedToCore(
             Some(render_task_trampoline),
             b"render\0".as_ptr() as *const u8,
             8192,
@@ -145,7 +148,7 @@ fn main() {
             4,
             core::ptr::null_mut(),
             1,
-        );
+        );*/
     }
 }
 

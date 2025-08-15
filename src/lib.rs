@@ -12,6 +12,8 @@ use core::sync::atomic::Ordering;
 use embedded_graphics::mono_font::ascii::FONT_10X20;
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::prelude::Angle;
+use embedded_graphics::prelude::Dimensions;
 use embedded_graphics::prelude::DrawTarget;
 use embedded_graphics::prelude::IntoStorage;
 use embedded_graphics::prelude::OriginDimensions;
@@ -19,6 +21,8 @@ use embedded_graphics::prelude::Point;
 use embedded_graphics::prelude::Primitive;
 use embedded_graphics::prelude::RgbColor;
 use embedded_graphics::prelude::Size;
+use embedded_graphics::prelude::WebColors;
+use embedded_graphics::primitives::Arc;
 use embedded_graphics::primitives::Circle;
 use embedded_graphics::primitives::PrimitiveStyle;
 use embedded_graphics::primitives::Rectangle;
@@ -31,6 +35,7 @@ use esp_idf_hal::delay::{Ets, FreeRtos};
 use esp_idf_svc::sys::esp;
 use esp_idf_sys::esp_lcd_rgb_panel_event_callbacks_t;
 use esp_idf_sys::esp_lcd_rgb_panel_event_data_t;
+use esp_idf_sys::esp_lcd_rgb_panel_refresh;
 use esp_idf_sys::esp_lcd_rgb_panel_register_event_callbacks;
 use esp_idf_sys::BaseType_t;
 use esp_idf_sys::QueueHandle_t;
@@ -169,8 +174,8 @@ where
     MOSI: embedded_hal::digital::OutputPin<Error = <SCK as ErrorType>::Error>,
 {
     // SWRESET
-    spi.write_command(0x01)?;
-    FreeRtos::delay_ms(240);
+    //spi.write_command(0xFF)?;
+    //FreeRtos::delay_ms(240);
 
     spi.write_data(0xFF, &[0x77, 0x01, 0x00, 0x00, 0x13])?;
     spi.write_data(0xEF, &[0x08])?;
@@ -198,7 +203,7 @@ where
             0x33, 0x1F,
         ],
     )?;
-
+    spi.write_data(0xD0, &[0x88]);
     spi.write_data(0xFF, &[0x77, 0x01, 0x00, 0x00, 0x11])?;
     spi.write_data(0xB0, &[0x9D])?;
     spi.write_data(0xB1, &[0x24])?;
@@ -282,7 +287,6 @@ unsafe extern "C" fn on_vsync_isr(
     VSYNC_FLAG.store(true, Ordering::Release);
     false // no higher-prio task woken
 }
-
 // ---------- minimal DrawTarget adapter over back buffer ----------
 pub struct EgBackBuffer<'a> {
     buf: &'a mut [u16],
@@ -333,7 +337,7 @@ impl DrawTarget for EgBackBuffer<'_> {
     }
 }
 
-// ---------- Framebuffer wrapper with VSYNC + cache flush (ROM) ----------
+// Framebuffer wrapper with VSYNC
 pub struct LcdFbs<'p> {
     panel: esp_lcd_panel_handle_t,
     w: usize,
@@ -359,7 +363,7 @@ impl<'p> LcdFbs<'p> {
         let b0 = slice::from_raw_parts_mut(fb0 as *mut u16, len);
         let b1 = slice::from_raw_parts_mut(fb1 as *mut u16, len);
 
-        // register VSYNC callback (no RTOS objects required)
+        // register VSYNC callback
         let mut cbs: esp_lcd_rgb_panel_event_callbacks_t = core::mem::zeroed();
         cbs.on_vsync = Some(on_vsync_isr);
         esp!(esp_lcd_rgb_panel_register_event_callbacks(
@@ -392,7 +396,6 @@ impl<'p> LcdFbs<'p> {
         EgBackBuffer::new(self.back, self.w, self.h)
     }
 
-    /// Queue the back buffer; wait one VSYNC; then swap front/back.
     pub fn show_back(&mut self) {
         let err = unsafe {
             esp_lcd_panel_draw_bitmap(
@@ -405,20 +408,15 @@ impl<'p> LcdFbs<'p> {
             )
         };
         esp!(err).expect("draw_bitmap");
-
-        core::mem::swap(&mut self.front, &mut self.back);
     }
 
-    /// Convenience: borrow back buffer as DrawTarget, render, then flip safely.
-    pub fn draw_and_flip<F>(&mut self, f: F, vsync_timeout_ms: u32)
-    where
-        F: FnOnce(&mut EgBackBuffer<'_>),
-    {
-        {
-            let mut dt = self.back_draw_target();
-            f(&mut dt);
-        } // dt dropped here
-        self.show_back();
+    pub fn refresh(&mut self) {
+        let err = unsafe { esp_lcd_rgb_panel_refresh(self.panel) };
+        esp!(err).expect("refresh failed");
+    }
+
+    pub fn swap_buf(&mut self) {
+        core::mem::swap(&mut self.front, &mut self.back);
     }
 
     #[inline]
@@ -443,60 +441,74 @@ pub unsafe fn render_task(fbs_ptr: *mut LcdFbs<'static>) {
     let fbs = &mut *fbs_ptr;
 
     loop {
-        if !BACK_CAN_DRAW.load(Ordering::Acquire){
-                        esp_idf_svc::hal::delay::FreeRtos::delay_ms(1);
-                        continue;
+        if !BACK_CAN_DRAW.load(Ordering::Acquire) {
+            //esp_idf_svc::hal::delay::FreeRtos::delay_ms(1);
+            continue;
         }
-            let mut dt = fbs.back_draw_target(); // always the current back
-            dt.clear_fast(Rgb565::BLACK);
-            let style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
-            Text::with_alignment(
-                "hello world!",
-                Point::new(240, 240),
-                style,
-                Alignment::Center,
-            )
+        let mut dt = fbs.back_draw_target(); // always the current back
+        dt.clear_fast(Rgb565::BLACK);
+        let style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+        Text::with_alignment(
+            "hello world!",
+            Point::new(240, 240),
+            style,
+            Alignment::Center,
+        )
+        .draw(&mut dt)
+        .unwrap();
+
+        Circle::new(Point::new(0, 0), 480)
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::BLUE, 10))
             .draw(&mut dt)
             .unwrap();
 
-            Circle::new(Point::new(0, 0), 480)
-                .into_styled(PrimitiveStyle::with_stroke(Rgb565::BLUE, 10))
-                .draw(&mut dt)
-                .unwrap();
-        //FRAME_GEN.fetch_add(1, Ordering::Release);
         BACK_READY.store(true, Ordering::Release);
         BACK_CAN_DRAW.store(false, Ordering::Release);
-        }
     }
-
+}
 
 pub unsafe fn display_task(fbs_ptr: *mut LcdFbs<'static>) {
     let fbs = &mut *fbs_ptr;
-
-    // optional: prefill both FBs once to a known image
-    fbs.clear_fast(Rgb565::BLACK);
     fbs.show_back();
-    fbs.clear_fast(Rgb565::BLACK);
-    fbs.show_back();
-
-    let mut queued_last = false;
-
+    let mut bingus: u16 = 0;
+    let mut oldpos: u16 = 0;
     loop {
         while !VSYNC_FLAG.swap(false, Ordering::AcqRel) {
             esp_idf_svc::hal::delay::FreeRtos::delay_ms(1);
         }
-        if queued_last {
-            log::info!("Frame");
-            queued_last = false;
-        }
-    
-        if BACK_READY.swap(false, Ordering::AcqRel){
-            fbs.show_back();
-            BACK_CAN_DRAW.store(true, Ordering::Release);
-            queued_last = true;
+        bingus = bingus.wrapping_add(1);
 
-        }
-    //}
+        fbs.swap_buf();
+        log::info!("Frame");
+
+        let mut dt = fbs.back_draw_target(); // always the current back
+                                             //dt.clear_fast(Rgb565::BLACK);
+        let style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+
+        let bb = Text::with_alignment(
+            "hello world!",
+            Point::new(oldpos.into(), 360),
+            style,
+            Alignment::Center,
+        )
+        .bounding_box();
+        Rectangle::new(bb.top_left, bb.size)
+            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+            .draw(&mut dt)
+            .unwrap();
+
+        Text::with_alignment(
+            "hello world!",
+            Point::new(bingus.into(), 360),
+            style,
+            Alignment::Center,
+        )
+        .draw(&mut dt)
+        .unwrap();
+
+        //Circle::new(Point::new(0, 0), 720).into_styled(PrimitiveStyle::with_stroke(Rgb565::BLUE, 10)).draw(&mut dt).unwrap();
+        //Arc::new(Point::new(0,0), 700, Angle::from_degrees(135.0), Angle::from_degrees(315.0)).into_styled(PrimitiveStyle::with_stroke(Rgb565::CSS_ORANGE, 20)).draw(&mut dt).unwrap();
+
+        oldpos = bingus;
     }
 }
-
