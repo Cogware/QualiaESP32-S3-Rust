@@ -14,3 +14,10 @@ MCU="esp32s3"
 # Note: this variable is not used by the pio builder (`cargo build --features pio`)
 ESP_IDF_VERSION = "v5.2.3"
 
+DEP_LV_CONFIG_PATH = { value = "lvgl_cfg",         relative = true }
+LV_CONF_PATH       = { value = "lvgl_cfg/lv_conf.h",     relative = true }
+LV_DRV_CONF_PATH   = { value = "lvgl_cfg/lv_drv_conf.h", relative = true }
+CC_xtensa-esp32s3-espidf = "/home/ninja/qualia_hello_world/.embuild/espressif/tools/xtensa-esp-elf/esp-13.2.0_20230928/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc"
+AR_xtensa-esp32s3-espidf = "/home/ninja/qualia_hello_world/.embuild/espressif/tools/xtensa-esp-elf/esp-13.2.0_20230928/xtensa-esp-elf/bin/xtensa-esp32s3-elf-ar"
+LVGL_FONTS_DIR = {relative = true, value = "custom-fonts"}
+CROSS_COMPILE = "xtensa-esp32-elf"

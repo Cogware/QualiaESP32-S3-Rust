@@ -30,9 +30,11 @@ port-expander = "0.6.5"
 esp-idf-hal = "0.45.2"
 fugit = "0.3.7"
 embedded-hal = "1.0.0"
-embedded-graphics = "0.8.1"
 qoi = "0.4.1"
-lvgl = "0.6.2"
+lvgl = { version = "0.6.2", default-features = false, features = ["unsafe_no_autoinit", "embedded_graphics"] }
+embedded-graphics = "0.8.1"
+lvgl-sys = "0.6.2"
+cstr_core = "0.2.6"
 
 # --- Optional Embassy Integration ---
 # esp-idf-svc = { version = "0.51", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
