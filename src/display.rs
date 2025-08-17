@@ -5,9 +5,9 @@ use core::{cell::UnsafeCell, ffi::c_void, ptr::null_mut};
 use esp_idf_sys::{
     esp, esp_lcd_new_rgb_panel, esp_lcd_panel_del, esp_lcd_panel_draw_bitmap,
     esp_lcd_panel_handle_t, esp_lcd_panel_init, esp_lcd_panel_reset, esp_lcd_panel_t,
-    esp_lcd_rgb_panel_config_t, esp_lcd_rgb_panel_config_t__bindgen_ty_1, esp_lcd_rgb_timing_t,
-    esp_lcd_rgb_timing_t__bindgen_ty_1, soc_periph_lcd_clk_src_t,
-    soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT, EspError,
+    esp_lcd_rgb_panel_config_t, esp_lcd_rgb_panel_config_t__bindgen_ty_1,
+    esp_lcd_rgb_panel_get_frame_buffer, esp_lcd_rgb_timing_t, esp_lcd_rgb_timing_t__bindgen_ty_1,
+    soc_periph_lcd_clk_src_t, soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT, EspError,
 };
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -99,7 +99,7 @@ impl Default for PanelConfig {
             clk_src: soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT,
             data_width: 16,
             bits_per_pixel: 0,
-            num_fbs: 1,
+            num_fbs: 2,
             bounce_buffer_size_px: 0,
             sram_trans_align: 8,
             psram_trans_align: 64,
@@ -165,7 +165,7 @@ impl Default for PanelFlagsConfig {
             disp_active_low: 0,
             refresh_on_demand: 0,
             fb_in_psram: 1,
-            double_fb: 0,
+            double_fb: 1,
             no_fb: 0,
             bb_invalidate_cache: 0,
         }
@@ -239,7 +239,7 @@ impl TimingsConfig {
 impl Default for TimingsConfig {
     fn default() -> Self {
         Self {
-            pclk_hz: 30_000_000,
+            pclk_hz: 16_000_000,
             horz_res: 720,
             vert_res: 720,
             hsync_pulse_width: 46,
@@ -380,6 +380,13 @@ impl LcdPanel {
 
     pub fn ret_mut_dref(&mut self) -> *mut esp_lcd_panel_t {
         unsafe { self.panel.as_mut().unwrap() }
+    }
+
+    pub fn get_buffers(&mut self) -> (*mut c_void, *mut c_void) {
+        let mut fb0: *mut c_void = core::ptr::null_mut();
+        let mut fb1: *mut c_void = core::ptr::null_mut();
+        unsafe { esp_lcd_rgb_panel_get_frame_buffer(self.panel, 2, &mut fb0, &mut fb1) };
+        (fb0, fb1)
     }
 
     ///

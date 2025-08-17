@@ -23,15 +23,16 @@
 #define LV_MEM_SIZE         (64U * 1024U)
 
 /* Optional goodies while bringing it up */
-#define LV_USE_LOG          1
+#define LV_USE_LOG          0
 #define LV_LOG_LEVEL        LV_LOG_LEVEL_WARN
-#define LV_USE_PERF_MONITOR 1  /* shows CPU/fps in a corner if you enable it in code */
+#define LV_USE_PERF_MONITOR 0  /* shows CPU/fps in a corner if you enable it in code */
 
 /* Disable things you don't use to keep build small (safe defaults) */
 #define LV_USE_GPU          0
 #define LV_USE_THEME_DEFAULT 1
+#define LV_USE_ANTIALIAS=1
 
 /* Fonts (enable at least one) */
-#define LV_FONT_MONTSERRAT_14 1
+#define LV_FONT_MONTSERRAT_48 1
 
 #endif /* LV_CONF_H */

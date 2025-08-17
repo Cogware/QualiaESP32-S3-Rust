@@ -245,3 +245,55 @@ pub fn now() -> Duration {
     let us = unsafe { sys::esp_timer_get_time() } as u64;
     Duration::from_micros(us)
 }
+
+use lvgl_sys as raw;
+//botmade i couldent give a shit\/
+
+// Pre-made static C strings for digits to avoid any allocation.
+#[link_section = ".rodata"]
+static DIGITS: [&[u8]; 10] = [
+    b"0\0", b"1\0", b"2\0", b"3\0", b"4\0", b"5\0", b"6\0", b"7\0", b"8\0", b"9\0",
+];
+
+#[no_mangle]
+pub unsafe extern "C" fn meter_draw_event_cb(e: *mut raw::lv_event_t) {
+    let code = raw::lv_event_get_code(e);
+    if code != raw::lv_event_code_t_LV_EVENT_DRAW_PART_BEGIN {
+        return;
+    }
+
+    // The param is a type-specific draw descriptor; for all widgets this is lv_obj_draw_part_dsc_t.
+    let dsc = raw::lv_event_get_param(e) as *mut raw::lv_obj_draw_part_dsc_t;
+    if dsc.is_null() {
+        return;
+    }
+
+    // We only care about meter ticks (labels are drawn as part of LV_PART_TICKS)
+    if (*dsc).part as u32 != raw::LV_PART_TICKS as u32 {
+        return;
+    }
+
+    // For meter ticks, LVGL sets `value` to the tick's numeric value and `text` to the default label.
+    // We’ll replace text with a single leading digit for a 0..8000 scale.
+    let mut val = (*dsc).value; // i32
+    if val < 0 {
+        val = -val;
+    }
+
+    // Reduce to the most significant digit (0..9)
+    while val >= 10 {
+        val /= 10;
+    }
+    let idx = if val > 9 { 9 } else { val as usize };
+
+    // Point the label text to one of our static "0\0" .. "9\0" strings
+    (*dsc).text = DIGITS[idx].as_ptr() as *mut i8;
+
+    // Optional: change label color / font
+    if !(*dsc).label_dsc.is_null() {
+        // Set color (e.g., white)
+        (*(*dsc).label_dsc).color = raw::_LV_COLOR_MAKE(240, 130, 0);
+        // Set font size (built-in LVGL font)
+        (*(*dsc).label_dsc).font = &raw::lv_font_montserrat_48 as *const _ as *mut _;
+    }
+}
